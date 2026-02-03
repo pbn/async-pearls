@@ -66,6 +66,11 @@ public class RangeTest {
             return key.equals(key1) && data.equals(data1);
         }
 
+        @Override
+        public int eventSize() {
+            return data.getBytes().length;
+        }
+
         @NotNull
         @Override
         public String toString() {

@@ -67,6 +67,11 @@ public interface EventCache<V extends CacheValue> {
      */
     long size();
 
+    /**
+     * Returns the size of all cache values in bytes.
+     */
+    long sizeInBytes();
+
 
     /**
      * Removes values whose key is strictly less than {@code belowThisKey}.

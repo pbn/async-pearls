@@ -115,6 +115,13 @@ public class Range<V extends CacheValue>
                 .sum();
     }
 
+    public long sizeInBytes() {
+        return segments.values()
+                .parallelStream()
+                .mapToLong(Segment::sizeInBytes)
+                .sum();
+    }
+
     public int segmentsSize() {
         return segments.size();
     }

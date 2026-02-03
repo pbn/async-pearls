@@ -23,6 +23,11 @@ public class TestEvent<K extends CacheKey> implements CacheValue {
         return cacheKey;
     }
 
+    @Override
+    public int eventSize() {
+        return payload.length;
+    }
+
     public byte[] getPayload() {
         return payload;
     }

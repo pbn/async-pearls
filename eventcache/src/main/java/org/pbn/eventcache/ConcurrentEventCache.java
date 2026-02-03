@@ -124,6 +124,11 @@ public class ConcurrentEventCache<V extends CacheValue>
         return ranges.values().stream().mapToLong(Range::size).sum();
     }
 
+    @Override
+    public long sizeInBytes() {
+        return ranges.values().parallelStream().mapToLong(Range::sizeInBytes).sum();
+    }
+
     /**
      * Removes items below the given key {@code belowThisKey}
      *
@@ -137,7 +142,7 @@ public class ConcurrentEventCache<V extends CacheValue>
         // Remove all ranges less than this key
         ConcurrentNavigableMap<Long, Range<V>> headMap = ranges.headMap(rangeIndex, false);
         long itemsRemoved = headMap.values()
-                .stream()
+                .parallelStream()
                 .mapToLong(Range::size)
                 .sum();
 

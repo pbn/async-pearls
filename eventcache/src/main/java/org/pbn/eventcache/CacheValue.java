@@ -24,4 +24,10 @@ public interface CacheValue {
      * @return the key for this value
      */
     <K extends CacheKey> K key();
+
+    /**
+     * Returns the size of this value in bytes.
+     * @return the size of this value in bytes
+     */
+    int eventSize();
 }

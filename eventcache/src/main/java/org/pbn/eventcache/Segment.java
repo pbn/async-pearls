@@ -30,7 +30,7 @@ public class Segment<V extends CacheValue> implements Indexable {
     private final long capacity;
 
     // State
-    private final AtomicLong size = new AtomicLong(0L);
+    private final AtomicLong sizeInBytes = new AtomicLong(0L);
 
     /**
      * Holds the sorted list of items based on their offset value.
@@ -64,7 +64,9 @@ public class Segment<V extends CacheValue> implements Indexable {
             throw new IllegalArgumentException("Segment index mismatch: " + segmentIndex + " != " + itemIndex);
         }
 
-        valueMap.putIfAbsent(k, v);
+        if (valueMap.putIfAbsent(k, v) == null) {
+            sizeInBytes.addAndGet(v.eventSize());
+        }
     }
 
     public <K extends CacheKey> List<V> get(K from /* exclusive */, int batchSize) {
@@ -81,6 +83,8 @@ public class Segment<V extends CacheValue> implements Indexable {
     public <K extends CacheKey> int remove(K belowThisKey) {
         ConcurrentNavigableMap<CacheKey, V> headMap = valueMap.headMap(belowThisKey, false);
         int removed = headMap.size();
+
+        sizeInBytes.addAndGet(-headMap.values().stream().mapToLong(CacheValue::eventSize).sum());
 
         headMap.clear();
 
@@ -122,6 +126,10 @@ public class Segment<V extends CacheValue> implements Indexable {
         return valueMap.size();
     }
 
+    public long sizeInBytes() {
+        return sizeInBytes.get();
+    }
+
     public boolean isEmpty() {
         return valueMap.isEmpty();
     }
@@ -137,7 +145,6 @@ public class Segment<V extends CacheValue> implements Indexable {
     @Override
     public String toString() {
         return "Segment{" +
-                "size=" + size +
                 ", index=" + segmentIndex +
                 ", capacity=" + capacity +
                 ", valueMap=" + valueMap.size() +
