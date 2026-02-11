@@ -260,5 +260,3 @@ If you insert offsets `1, 2, 4` (missing `3`), then:
 - Ordered, gapless batch reads
 - Efficient batch inserts (especially when pre-sorted)
 - Fast retention via bulk removal of entire ranges and partial removal within a range
-
-If you share the expected workload (event rate, retention window, reader/writer concurrency), I can suggest concrete `rangeSize` / `segmentSize` defaults and add a tuning section to this doc.
