@@ -1,0 +1,48 @@
+
+
+======= With compute() in the Range.put(list) method
+Benchmark                                                    (eventsCount)  (rangeSize)  (segmentSize)  Mode  Cnt     Score   Error  Units
+EventCacheBenchmark.baseLine                                       1000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                       5000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                      10000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                      15000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache        1000000       100000           2000  avgt    2    70.455          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache        5000000       100000           2000  avgt    2   423.947          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache       10000000       100000           2000  avgt    2   840.794          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache       15000000       100000           2000  avgt    2  1160.433          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache            1000000       100000           2000  avgt    2    94.881          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache            5000000       100000           2000  avgt    2   543.993          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache           10000000       100000           2000  avgt    2  1158.045          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache           15000000       100000           2000  avgt    2  1714.463          ms/op
+
+====== One sequential remove call after consuming all events
+
+Benchmark                                                    (eventsCount)  (rangeSize)  (segmentSize)  Mode  Cnt     Score   Error  Units
+EventCacheBenchmark.baseLine                                       1000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                       5000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                      10000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                      15000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache        1000000       100000           2000  avgt    2    71.810          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache        5000000       100000           2000  avgt    2   413.786          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache       10000000       100000           2000  avgt    2   793.875          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache       15000000       100000           2000  avgt    2  1218.067          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache            1000000       100000           2000  avgt    2   162.886          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache            5000000       100000           2000  avgt    2   919.241          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache           10000000       100000           2000  avgt    2  1918.349          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache           15000000       100000           2000  avgt    2  2883.789          ms/op
+
+===== Concurrent Possibly multiple remove calls
+
+Benchmark                                                    (eventsCount)  (rangeSize)  (segmentSize)  Mode  Cnt     Score   Error  Units
+EventCacheBenchmark.baseLine                                       1000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                       5000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                      10000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.baseLine                                      15000000       100000           2000  avgt    2    ≈ 10⁻⁷          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache        1000000       100000           2000  avgt    2    85.313          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache        5000000       100000           2000  avgt    2   440.517          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache       10000000       100000           2000  avgt    2  1043.613          ms/op
+EventCacheBenchmark.testEventReaderWithConcurrentEventCache       15000000       100000           2000  avgt    2  1549.407          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache            1000000       100000           2000  avgt    2   128.313          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache            5000000       100000           2000  avgt    2   736.724          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache           10000000       100000           2000  avgt    2  1556.420          ms/op
+EventCacheBenchmark.testEventReaderWithSimpleEventCache           15000000       100000           2000  avgt    2  2377.362          ms/op

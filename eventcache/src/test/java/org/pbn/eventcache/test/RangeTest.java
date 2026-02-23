@@ -8,7 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pbn.eventcache.CacheKey;
 import org.pbn.eventcache.CacheValue;
-import org.pbn.eventcache.Range;
+import org.pbn.eventcache.impl.Range;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Unit tests for Range class
@@ -85,7 +86,7 @@ public class RangeTest {
 
     @Test
     void testConstructor() {
-        assertEquals(RANGE_INDEX, range.getRangeIndex());
+        assertEquals(RANGE_INDEX, range.index());
         assertEquals(0, range.size());
     }
 
@@ -136,9 +137,8 @@ public class RangeTest {
                 new TestEvent(15L, "data3")
         );
 
-        boolean result = range.put(events);
+        range.put(events);
 
-        assertTrue(result);
         assertEquals(3, range.size());
         assertEquals(2, range.segmentsSize());
     }
@@ -146,11 +146,12 @@ public class RangeTest {
     @Test
     void testPutEmptyList() {
         List<TestEvent> emptyList = List.of();
-        boolean result = range.put(emptyList);
-
-        assertTrue(result);
-        assertEquals(0, range.size());
-        assertEquals(0, range.segmentsSize());
+        try {
+            range.put(emptyList);
+            fail("Should have thrown an IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // Pass
+        }
     }
 
     @Test
@@ -364,11 +365,11 @@ public class RangeTest {
 
     @Test
     void testRangeIndex() {
-        assertEquals(RANGE_INDEX, range.getRangeIndex());
+        assertEquals(RANGE_INDEX, range.index());
 
         // Test with different range index
         Range<TestEvent> range2 = new Range<>(99L, SEGMENT_SIZE);
-        assertEquals(99L, range2.getRangeIndex());
+        assertEquals(99L, range2.index());
     }
 
 

@@ -1,4 +1,4 @@
-package org.pbn.eventcache.test;
+package org.pbn.eventcache.test.benchmark;
 
 import org.pbn.eventcache.CacheKey;
 import org.pbn.eventcache.CacheValue;
@@ -14,10 +14,6 @@ public class TestEvent<K extends CacheKey> implements CacheValue {
         this.payload = payload;
     }
 
-    static <C extends CacheKey> TestEvent<C> of(long offset) {
-        return new TestEvent<>((C)new TestOffset(offset), new byte[0]);
-    }
-
     public Long getOffset() {
         return cacheKey.offset();
     }
@@ -25,11 +21,6 @@ public class TestEvent<K extends CacheKey> implements CacheValue {
     @Override
     public K key() {
         return cacheKey;
-    }
-
-    @Override
-    public int eventSize() {
-        return payload.length;
     }
 
     public byte[] getPayload() {
@@ -51,6 +42,11 @@ public class TestEvent<K extends CacheKey> implements CacheValue {
     @Override
     public String toString() {
         return "TestEvent{" + "cacheKey=" + cacheKey + '}';
+    }
+
+    @Override
+    public int eventSize() {
+        return 0;
     }
 }
 

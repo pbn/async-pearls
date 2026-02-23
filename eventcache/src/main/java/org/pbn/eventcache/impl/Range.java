@@ -1,12 +1,15 @@
-package org.pbn.eventcache;
+package org.pbn.eventcache.impl;
+
+import org.pbn.eventcache.CacheKey;
+import org.pbn.eventcache.CacheValue;
 
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import static org.pbn.eventcache.impl.Container.computeIndex;
 
 /**
  * Stores segments within this range.
@@ -17,10 +20,12 @@ import java.util.stream.Collectors;
  * @author pbn
  */
 public class Range<V extends CacheValue>
-        implements Indexable {
+        implements Container<V> {
+    private final AtomicLong lastUsed;
+
     private final long rangeIndex;
     private final long segmentSize;
-    private final ConcurrentSkipListMap<Long, Segment<V>> segments;
+    private final ConcurrentSkipListMap<Long, Container<V>> segments;
 
     /**
      * Creates a new range for the given <code>rangeIndex</code>.
@@ -33,23 +38,53 @@ public class Range<V extends CacheValue>
         this.rangeIndex = rangeIndex;
         this.segmentSize = segmentSize;
         segments = new ConcurrentSkipListMap<>();
+        lastUsed = new AtomicLong(System.currentTimeMillis());
     }
 
-    public void put(CacheKey k, V v) {
-        long segmentIndex = getIndex(k.offset(), segmentSize);
-        Segment<V> segment = segments.computeIfAbsent(segmentIndex, this::apply);
+    public long lastUsed() {
+        return lastUsed.get();
+    }
+
+    public void put(List<V> items) {
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("Cannot put empty list of items");
+        }
+
+        touch();
+
+        CacheKey firstKey = items.getFirst().key();
+        CacheKey lastKey = items.getLast().key();
+        long segmentIndexFirstKey = computeIndex(firstKey.offset(), segmentSize);
+        long segmentIndexLastKey = computeIndex(lastKey.offset(), segmentSize);
+        if (segmentIndexFirstKey != segmentIndexLastKey) {
+            for (V item : items) {
+                put(item.key(), item);
+            }
+        } else {
+            // Optimization: assumes all items belong to a segment if
+            // the indexes of first and last elements are equal
+            segments.compute(segmentIndexFirstKey, (k, v) -> {
+                Container<V> segment = v;
+                if (v == null) {
+                    segment = new Segment<>(k, segmentSize);
+                }
+
+                segment.put(items);
+
+                return segment;
+            });
+        }
+    }
+
+    public <K extends CacheKey> void put(K k, V v) {
+        long segmentIndex = computeIndex(k.offset(), segmentSize);
+        Container<V> segment = segments.computeIfAbsent(segmentIndex, this::apply);
         segment.put(k, v);
     }
 
-    public boolean put(List<V> items) {
-        for (V item : items) {
-            put(item.key(), item);
-        }
-
-        return true;
-    }
-
     public <K extends CacheKey> List<V> get(K from, int maxBatchSize, boolean inclusive) {
+        touch();
+
         List<V> result = readFromSegment(from, maxBatchSize, inclusive);
         List<V> more = result;
         while (!more.isEmpty() && result.size() < maxBatchSize) {
@@ -65,8 +100,8 @@ public class Range<V extends CacheValue>
     }
 
     private <K extends CacheKey> List<V> readFromSegment(K from, int batchSize, boolean inclusive) {
-        long segmentIndex = getIndex(from.offset(), segmentSize);
-        Segment<V> segment = segments.get(segmentIndex);
+        long segmentIndex = computeIndex(from.offset(), segmentSize);
+        Container<V> segment = segments.get(segmentIndex);
 
         if (!inclusive && (segment == null || segment.isLast(from))) {
             segment = segments.get(segmentIndex + 1);
@@ -81,44 +116,26 @@ public class Range<V extends CacheValue>
     }
 
     public <K extends CacheKey> long remove(K belowThisKey /* exclusive */) {
-        Long segmentIndex = getIndex(belowThisKey.offset(), segmentSize);
+        Long segmentIndex = computeIndex(belowThisKey.offset(), segmentSize);
 
-        // Remove all segments less than this key
-        ConcurrentNavigableMap<Long, Segment<V>> headMap = segments.headMap(segmentIndex, false);
-        long removed = headMap.values()
-                .stream()
-                .mapToLong(Segment::size)
-                .sum();
+        return Container.remove(segments, belowThisKey, segmentIndex);
+    }
 
-        headMap.clear();
-
-        // Remove items from within the segment
-        AtomicLong itemsRemovedFromSegment = new AtomicLong(0);
-
-        // Remove segments within the range
-        segments.computeIfPresent(segmentIndex, (_, v) -> {
-            itemsRemovedFromSegment.set(v.remove(belowThisKey));
-            if (v.isEmpty()) {
-                return null;
-            } else {
-                return v;
-            }
-        });
-
-        return removed + itemsRemovedFromSegment.get();
+    public long remove(long olderThanThisTimestamp) {
+        return Container.remove(segments, olderThanThisTimestamp);
     }
 
     public long size() {
         return segments.values()
                 .stream()
-                .mapToLong(Segment::size)
+                .mapToLong(Container::size)
                 .sum();
     }
 
     public long sizeInBytes() {
         return segments.values()
                 .parallelStream()
-                .mapToLong(Segment::sizeInBytes)
+                .mapToLong(Container::sizeInBytes)
                 .sum();
     }
 
@@ -126,7 +143,7 @@ public class Range<V extends CacheValue>
         return segments.size();
     }
 
-    public long getRangeIndex() {
+    public long index() {
         return rangeIndex;
     }
 
@@ -152,8 +169,8 @@ public class Range<V extends CacheValue>
                 "], {" +
                 segments.values()
                         .stream()
-                        .sorted(new ReverseSegmentComparator<Segment<?>>())
-                        .map(Segment::deepToString)
+                        .sorted(new ReverseComparator<>())
+                        .map(Container::deepToString)
                         .collect(Collectors.joining(", ")) +
                 "}";
     }
@@ -162,11 +179,7 @@ public class Range<V extends CacheValue>
         return new Segment<>(index, segmentSize);
     }
 
-    private static class ReverseSegmentComparator<S extends Segment<?>>
-            implements Comparator<S> {
-        @Override
-        public int compare(S o1, S o2) {
-            return Long.compare(o2.getSegmentIndex(), o1.getSegmentIndex());
-        }
+    private void touch() {
+        lastUsed.updateAndGet(prev -> Math.max(prev, System.currentTimeMillis()));
     }
 }

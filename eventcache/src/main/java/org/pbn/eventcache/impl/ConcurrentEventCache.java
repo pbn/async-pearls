@@ -1,12 +1,17 @@
-package org.pbn.eventcache;
+package org.pbn.eventcache.impl;
 
+import org.pbn.eventcache.CacheKey;
+import org.pbn.eventcache.CacheValue;
+import org.pbn.eventcache.EventCache;
+
+import java.time.Duration;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import static org.pbn.eventcache.impl.Container.computeIndex;
 
 /**
  * Stores ranges of items, each range contains segments.
@@ -17,11 +22,15 @@ import java.util.stream.Collectors;
  * @author pbn
  */
 public class ConcurrentEventCache<V extends CacheValue>
-        implements EventCache<V>,  Indexable {
+        implements EventCache<V> {
+
+    private static final Duration DEFAULT_TTL_10_MINUTES = Duration.ofMinutes(10);
+
     private final long rangeSize;
     private final long segmentSize;
+    private final Duration ttl;
 
-    private final ConcurrentSkipListMap<Long, Range<V>> ranges;
+    private final ConcurrentSkipListMap<Long, Container<V>> ranges;
 
     /**
      * Creates a range cache instance with the given range size
@@ -35,12 +44,24 @@ public class ConcurrentEventCache<V extends CacheValue>
     public ConcurrentEventCache(long rangeSize, long segmentSize) {
         this.rangeSize = rangeSize;
         this.segmentSize = segmentSize;
+        ttl = DEFAULT_TTL_10_MINUTES;
         ranges = new ConcurrentSkipListMap<>();
     }
 
+    public ConcurrentEventCache(long rangeSize, long segmentSize, Duration ttl) {
+        this.rangeSize = rangeSize;
+        this.segmentSize = segmentSize;
+        this.ttl = ttl;
+        ranges = new ConcurrentSkipListMap<>();
+    }
+
+    public Duration getTtl() {
+        return ttl;
+    }
+
     private <K extends CacheKey> void put(K k, V v) {
-        long rangeIndex = getIndex(k.offset(), rangeSize);
-        Range<V> range = ranges.computeIfAbsent(rangeIndex,
+        long rangeIndex = computeIndex(k.offset(), rangeSize);
+        Container<V> range = ranges.computeIfAbsent(rangeIndex,
                 _ -> new Range<>(rangeIndex, segmentSize));
         range.put(k, v);
     }
@@ -55,12 +76,12 @@ public class ConcurrentEventCache<V extends CacheValue>
     @Override
     public void put(List<V> items) throws IllegalStateException {
         V first = items.getFirst();
-        Long firstIndex = getIndex(first.key().offset(), rangeSize);
+        Long firstIndex = computeIndex(first.key().offset(), rangeSize);
         V last = items.getLast();
-        Long lastIndex = getIndex(last.key().offset(), rangeSize);
+        Long lastIndex = computeIndex(last.key().offset(), rangeSize);
 
         if (firstIndex.equals(lastIndex)) { /* all items are in the same range */
-            Range<V> range = ranges.computeIfAbsent(firstIndex,
+            Container<V> range = ranges.computeIfAbsent(firstIndex,
                     _ -> new Range<>(firstIndex, segmentSize));
             range.put(items);
         } else {
@@ -104,9 +125,13 @@ public class ConcurrentEventCache<V extends CacheValue>
         return result;
     }
 
+    protected ConcurrentMap<Long, Container<V>> ranges() {
+        return ranges;
+    }
+
     private <K extends CacheKey> List<V> readFromRange(K from, int maxBatchSize, boolean inclusive) {
-        long rangeIndex = getIndex(from.offset(), rangeSize);
-        Range<V> range = ranges.get(rangeIndex);
+        long rangeIndex = computeIndex(from.offset(), rangeSize);
+        Container<V> range = ranges.get(rangeIndex);
         if (!inclusive && (range == null /* when the "from" key is 0L and the cache contains events from 1L */
                 || range.isLast(from) /* when the "from" key is the last offset of a range */)) {
             range = ranges.get(rangeIndex + 1);
@@ -121,12 +146,12 @@ public class ConcurrentEventCache<V extends CacheValue>
 
     @Override
     public long size() {
-        return ranges.values().stream().mapToLong(Range::size).sum();
+        return ranges.values().stream().mapToLong(Container::size).sum();
     }
 
     @Override
     public long sizeInBytes() {
-        return ranges.values().parallelStream().mapToLong(Range::sizeInBytes).sum();
+        return ranges.values().parallelStream().mapToLong(Container::sizeInBytes).sum();
     }
 
     /**
@@ -137,30 +162,14 @@ public class ConcurrentEventCache<V extends CacheValue>
      */
     @Override
     public <K extends CacheKey> long remove(K belowThisKey /* exclusive */) {
-        Long rangeIndex = getIndex(belowThisKey.offset(), rangeSize);
+        Long rangeIndex = computeIndex(belowThisKey.offset(), rangeSize);
 
-        // Remove all ranges less than this key
-        ConcurrentNavigableMap<Long, Range<V>> headMap = ranges.headMap(rangeIndex, false);
-        long itemsRemoved = headMap.values()
-                .parallelStream()
-                .mapToLong(Range::size)
-                .sum();
+        return Container.remove(ranges, belowThisKey, rangeIndex);
+    }
 
-        headMap.clear();
-
-        AtomicLong itemsRemovedFromSegments = new AtomicLong(0);
-
-        // Remove segments within the range
-        ranges.computeIfPresent(rangeIndex, (_, v) -> {
-            itemsRemovedFromSegments.set(v.remove(belowThisKey));
-            if (v.size() == 0) {
-                return null;
-            } else {
-                return v;
-            }
-        });
-
-        return itemsRemoved + itemsRemovedFromSegments.get();
+    @Override
+    public long remove(long olderThanThisTimestamp) {
+        return Container.remove(ranges, olderThanThisTimestamp);
     }
 
     public String deepToString() {
@@ -171,17 +180,9 @@ public class ConcurrentEventCache<V extends CacheValue>
                 "{" +
                 ranges.values()
                         .stream()
-                        .sorted(new RangeReverseComparator<>())
-                        .map(Range::deepToString)
+                        .sorted(new Container.ReverseComparator<>())
+                        .map(Container::deepToString)
                         .collect(Collectors.joining(System.lineSeparator())) +
                 "}";
-    }
-
-    private static class RangeReverseComparator<R extends Range<?>>
-            implements Comparator<R> {
-        @Override
-        public int compare(R o1, R o2) {
-            return Long.compare(o2.getRangeIndex(), o1.getRangeIndex());
-        }
     }
 }
