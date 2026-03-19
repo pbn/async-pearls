@@ -16,7 +16,7 @@ The primary implementation is **`ConcurrentEventCache`**, optimized for concurre
 
 ### Event, Key, Value
 
-- **`CacheKey`**: identifies an event. Most importantly it exposes an `offset()` (a `long`) and defines ordering (e.g., via `Comparable`).
+- **`CacheKey`**: identifies an event. Most importantly, it exposes an `offset()` (a `long`) and defines ordering (e.g., via `Comparable`).
 - **`CacheValue`**: a stored value that can return its key (e.g., `value.key()`).
 - An “event stream” is a sequence of values ordered by key/offset.
 
@@ -64,7 +64,7 @@ Core operations:
 - **Concurrency-friendly**: support multiple readers/writers without global locks.
 - **Efficient retention**: fast removal of old data below a cutoff.
 - **Efficient reads**: read batches without scanning the whole cache.
-- **Scalable memory layout**: avoid monolithic structures for large keyspaces.
+- **Scalable memory layout**: avoid monolithic structures for large key spaces.
 
 ### High-level structure: Ranges → Segments → Items
 
@@ -136,6 +136,86 @@ Internally, ranges are created on demand (`computeIfAbsent`).
 
 ---
 
+## CacheManager
+
+`CacheManager<V>` is the top-level component for managing **multiple named caches** within a single application. It wraps `ConcurrentEventCache` instances and drives their periodic eviction automatically.
+
+### Responsibilities
+
+| Responsibility | Description |
+|---|---|
+| **Cache registry** | Maintains a named map of `ConcurrentEventCache` instances. Caches are created on first use and can be removed explicitly. |
+| **Reader tracking** | Optionally wraps a cache in a reader-scoped decorator that records the last-read offset per named reader. |
+| **Periodic sweeping** | Runs a background task at a configurable interval to evict stale data from all registered caches. |
+| **Lifecycle** | Owns the `ScheduledExecutorService` used for sweeping and shuts it down cleanly via `shutdown()`. |
+
+### Cache creation
+
+There are four public `createCache` overloaded methods:
+
+```
+createCache(cacheName, rangeSize, segmentSize) 
+createCache(cacheName, rangeSize, segmentSize, ttl)
+createCache(readerName, cacheName, rangeSize, segmentSize)
+createCache(readerName, cacheName, rangeSize, segmentSize, ttl)
+```
+- Overloads **without** a `readerName` return the raw underlying `ConcurrentEventCache` directly.
+  If a cache with the same name already exists, the existing instance is returned and the sizing parameters are ignored.
+- Overloads **with** a `readerName` return a lightweight `CacheReader` decorator that transparently forwards all operations to the shared underlying cache, but additionally records the offset of the last event read by that named reader. Multiple readers can be registered against the same cache.
+
+### Reader tracking and sweep-based eviction
+
+When readers are registered, the sweep pass uses their last-read offsets to protect data that slow readers have not yet consumed:
+
+1. **Reader-based eviction** — finds the reader with the *lowest* last-read offset across all readers for a cache and removes all entries below that offset. This prevents fast producers from evicting data before a slow consumer has read it.
+2. **TTL-based eviction** — removes entries (and stale reader records) whose wall-clock timestamp is older than the cache's configured TTL. A default TTL of 10 minutes applies when none is supplied.
+
+Both passes run together on every sweep cycle.
+
+### Sweeping
+
+The sweep interval is supplied at construction time (in milliseconds). The scheduler fires `sweepCache()` repeatedly at that fixed rate. `sweepCache()` may also be called directly (e.g. in tests) — any `Throwable` it encounters is silently suppressed so the scheduler thread stays alive.
+
+### Thread safety
+
+All public methods of `CacheManager` are safe for concurrent use by multiple threads.
+
+### Example
+
+```java
+public class CacheManagerExample {
+    public static void main(String[] args) {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    
+        // Sweep every 30 seconds.
+        CacheManager<MyEvent> manager = new CacheManager<>(scheduler, 30_000L);
+    
+        // --- Simple cache (no reader tracking) ---
+        EventCache<MyEvent> cache = manager.createCache("events", 100_000L, 2_000L);
+        cache.put(List.of(new MyEvent(1, "a"), new MyEvent(2, "b")));
+    
+        // --- Cache with TTL ---
+        EventCache<MyEvent> ttlCache = manager.createCache(
+                "events-ttl", 100_000L, 2_000L, Duration.ofMinutes(5));
+    
+        // --- Reader-scoped cache (offset tracking enabled) ---
+        EventCache<MyEvent> readerView = manager.createCache(
+                "consumer-A", "events", 100_000L, 2_000L);
+    
+        // Reads through readerView update the last-read offset for "consumer-A".
+        List<MyEvent> batch = readerView.get(new OffsetKey(0), 50);
+    
+        // --- Remove a cache and all its reader state ---
+        manager.removeCache("events");
+    
+        // --- Shut down the background scheduler ---
+        manager.shutdown();
+    }
+}
+```
+
+---
+
 ## Configuration
 
 ### `rangeSize` and `segmentSize`
@@ -161,7 +241,7 @@ Below is an illustrative usage example showing the intended access patterns. (Th
 ```java
 import org.pbn.eventcache.CacheKey;
 import org.pbn.eventcache.CacheValue;
-import org.pbn.eventcache.ConcurrentEventCache;
+import org.pbn.eventcache.impl.ConcurrentEventCache;
 import org.pbn.eventcache.EventCache;
 
 import java.util.List;
@@ -260,3 +340,12 @@ If you insert offsets `1, 2, 4` (missing `3`), then:
 - Ordered, gapless batch reads
 - Efficient batch inserts (especially when pre-sorted)
 - Fast retention via bulk removal of entire ranges and partial removal within a range
+
+`CacheManager` builds on top of `ConcurrentEventCache` to support:
+
+- Multiple named caches with a single scheduler
+- Per-reader offset tracking to protect unread data from eviction
+- Automatic TTL- and reader-driven eviction on a configurable sweep interval
+
+## Future work
+- Capped size and eviction policy.

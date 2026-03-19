@@ -16,6 +16,7 @@ import java.util.List;
  * @author pbn
  */
 public interface EventCache<V extends CacheValue> {
+
     /**
      * Returns up to {@code batchSize} values starting at {@code key}.
      * <p>
@@ -32,12 +33,11 @@ public interface EventCache<V extends CacheValue> {
      */
     <K extends CacheKey> List<V> get(K key, int batchSize, boolean inclusive);
 
-
     /**
      * Returns up to {@code batchSize} values starting at {@code key}.
      * <p>
      * This is a convenience overload of {@link #get(CacheKey, int, boolean)};
-     * the exact inclusion behavior is implementation-defined.
+     * method where the inclusive is false.
      *
      * @param key the starting key for the read (must not be {@code null})
      * @param batchSize the maximum number of values to return
@@ -47,7 +47,6 @@ public interface EventCache<V extends CacheValue> {
      * @throws IllegalArgumentException if {@code batchSize} is negative
      */
     <K extends CacheKey> List<V> get(K key, int batchSize);
-
 
     /**
      * Inserts the given values into the cache.
@@ -72,7 +71,6 @@ public interface EventCache<V extends CacheValue> {
      */
     long sizeInBytes();
 
-
     /**
      * Removes values whose key is strictly less than {@code belowThisKey}.
      *
@@ -82,4 +80,6 @@ public interface EventCache<V extends CacheValue> {
      * @return the number of removed values
      */
     <K extends CacheKey> long remove(K belowThisKey);
+
+    long remove(long olderThanThisTimestamp);
 }

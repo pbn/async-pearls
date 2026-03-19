@@ -1,7 +1,7 @@
 package org.pbn.eventcache.test;
 
 import org.junit.jupiter.api.Test;
-import org.pbn.eventcache.ConcurrentEventCache;
+import org.pbn.eventcache.impl.ConcurrentEventCache;
 
 import java.util.ArrayList;
 import java.util.List;

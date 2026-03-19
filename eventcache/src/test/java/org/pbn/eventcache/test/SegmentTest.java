@@ -3,7 +3,7 @@ package org.pbn.eventcache.test;
 
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
-import org.pbn.eventcache.Segment;
+import org.pbn.eventcache.impl.Segment;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -277,7 +277,7 @@ public class SegmentTest {
         }
 
         // Act
-        int removed = segment.remove(TestOffset.of(6L)); // removes 1..5
+        long removed = segment.remove(TestOffset.of(6L)); // removes 1..5
 
         // Assert
         assertEquals(5, removed);
@@ -298,7 +298,7 @@ public class SegmentTest {
         Segment<TestEvent<TestOffset>> segment = new Segment<>(1L, capacity);
 
         // Act
-        int removed = segment.remove(TestOffset.of(5L));
+        long removed = segment.remove(TestOffset.of(5L));
 
         // Assert
         assertEquals(0, removed);
@@ -318,7 +318,7 @@ public class SegmentTest {
         }
 
         // Act
-        int removed = segment.remove(TestOffset.of(1L)); // exclusive: nothing is < 1
+        long removed = segment.remove(TestOffset.of(1L)); // exclusive: nothing is < 1
 
         // Assert
         assertEquals(0, removed);
@@ -342,7 +342,7 @@ public class SegmentTest {
         }
 
         // Act
-        int removed = segment.remove(TestOffset.of(11L)); // removes 1..10
+        long removed = segment.remove(TestOffset.of(11L)); // removes 1..10
 
         // Assert
         assertEquals(capacity, removed);
@@ -386,7 +386,7 @@ public class SegmentTest {
             for (int i = 0; i < operationsPerType; i++) {
                 tasks.add(() -> {
                     long belowExclusive = ThreadLocalRandom.current().nextLong(1, capacity + 2L); // 1..capacity+1
-                    int removed = segment.remove(TestOffset.of(belowExclusive));
+                    long removed = segment.remove(TestOffset.of(belowExclusive));
                     assertTrue(removed >= 0 && removed <= capacity);
                     return true;
                 });

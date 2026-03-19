@@ -1,4 +1,7 @@
-package org.pbn.eventcache;
+package org.pbn.eventcache.impl;
+
+import org.pbn.eventcache.CacheKey;
+import org.pbn.eventcache.CacheValue;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,6 +11,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static org.pbn.eventcache.impl.Container.computeIndex;
 
 /**
  * Stores items in sorted order based on the offset value.
@@ -23,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @author pbn
  */
-public class Segment<V extends CacheValue> implements Indexable {
+public class Segment<V extends CacheValue> implements Container<V> {
 
     // Inputs
     private final long segmentIndex;
@@ -31,6 +36,7 @@ public class Segment<V extends CacheValue> implements Indexable {
 
     // State
     private final AtomicLong sizeInBytes = new AtomicLong(0L);
+    private final AtomicLong lastUsed;
 
     /**
      * Holds the sorted list of items based on their offset value.
@@ -47,6 +53,11 @@ public class Segment<V extends CacheValue> implements Indexable {
         this.capacity = capacity;
         Comparator<CacheKey> offsetComparator = Comparator.comparing(CacheKey::offset);
         valueMap = new ConcurrentSkipListMap<>(offsetComparator);
+        lastUsed = new AtomicLong(System.currentTimeMillis());
+    }
+
+    public long lastUsed() {
+        return lastUsed.get();
     }
 
     /**
@@ -58,9 +69,8 @@ public class Segment<V extends CacheValue> implements Indexable {
      * doesn't belong to this segment.
      */
     public <K extends CacheKey> void put(K k, V v) throws IllegalStateException {
-        // pre-condition
-        long itemIndex = getIndex(k.offset(), capacity);
-        if (segmentIndex != itemIndex) {
+        long itemIndex = computeIndex(k.offset(), capacity);
+        if (segmentIndex != itemIndex) { // pre-condition
             throw new IllegalArgumentException("Segment index mismatch: " + segmentIndex + " != " + itemIndex);
         }
 
@@ -69,26 +79,47 @@ public class Segment<V extends CacheValue> implements Indexable {
         }
     }
 
+    public void put(List<V> items) throws IllegalStateException {
+        touch();
+
+        for (V item : items) {
+            put(item.key(), item);
+        }
+    }
+
     public <K extends CacheKey> List<V> get(K from /* exclusive */, int batchSize) {
         return get(from, batchSize, false);
     }
 
     public <K extends CacheKey> List<V> get(K from, int batchSize, boolean inclusive) {
+        touch();
+
         // Get sorted items from the given key.
         ConcurrentNavigableMap<CacheKey, V> subMap = valueMap.tailMap(from, inclusive);
 
         return gatherEvents(subMap, from, batchSize);
     }
 
-    public <K extends CacheKey> int remove(K belowThisKey) {
+    public <K extends CacheKey> long remove(K belowThisKey) {
         ConcurrentNavigableMap<CacheKey, V> headMap = valueMap.headMap(belowThisKey, false);
-        int removed = headMap.size();
+        int removed = 0;
 
-        sizeInBytes.addAndGet(-headMap.values().stream().mapToLong(CacheValue::eventSize).sum());
+        if (!headMap.isEmpty()) {
+            long removedBytes = headMap.values().stream().mapToLong(CacheValue::eventSize).sum();
+            sizeInBytes.addAndGet(-removedBytes);
 
-        headMap.clear();
+            removed = headMap.size();
+            headMap.clear();
+        }
 
         return removed;
+    }
+
+    @Override
+    public long remove(long olderThanThisTimestamp) {
+        // The individual items are not tracked for
+        // idle time, so this is a no-op
+        return 0L;
     }
 
     /**
@@ -122,7 +153,7 @@ public class Segment<V extends CacheValue> implements Indexable {
         return items;
     }
 
-    public int size() {
+    public long size() {
         return valueMap.size();
     }
 
@@ -138,7 +169,7 @@ public class Segment<V extends CacheValue> implements Indexable {
         return !valueMap.isEmpty() && valueMap.lastKey().equals(offset);
     }
 
-    public long getSegmentIndex() {
+    public long index() {
         return segmentIndex;
     }
 
@@ -158,7 +189,7 @@ public class Segment<V extends CacheValue> implements Indexable {
                 + "]";
     }
 
-    // TODO: pbn
-    // Optimization: mark a segment if there are gaps.
-    // Introduce put(list) method on the segment.
+    private void touch() {
+        lastUsed.updateAndGet(prev -> Math.max(prev, System.currentTimeMillis()));
+    }
 }
